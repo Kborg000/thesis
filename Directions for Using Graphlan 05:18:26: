@@ -1,0 +1,274 @@
+Directions for Using Graphlan 05/18/26:
+
+Graphlan is not compatible with any version of Python that isn't <3.0 (at present).
+
+So you want to create a new conda environment with the last pre-3.0 version of Python which is 2.7.18. 
+
+However, you can't install that by normal means. The usual conda create, brew install, etc., won't provide access through bioconda/anaconda compatible with ARM (won't work if you have a newer Mac). pyenv apparently somewhat competes with Conda in that they're both trying to do the same thing, so it installs python somewhere that conda doesn't see it (that could be sorted out, but not worth it). This, however, works (if you have a Mac with an M1/M2/etc.,. chip).
+
+#Run in the command line to create a new conda environment with the correct version
+CONDA_SUBDIR=osx-64 conda create -n py27 python=2.7.18
+conda activate py27
+conda config --env --set subdir osx-64
+
+
+#To install Graphlan, run in command line from within the activated py27 conda environment:
+
+conda install -c bioconda graphlan
+
+
+#To visualize your taxonomic profiles visually using GraPhlAn, you must first convert your MetaPhlAn output table into GraPhlAn-compatible tree and annotation files using the helper tool
+
+
+export2graphlan.py \
+  -i profiled_metagenome.txt \
+  --tree output_tree.txt \
+  --annot output_annot.txt \
+  --most_abundant 100 \
+  --least_clade_depth 1 \
+  --annotations 2
+
+
+
+Usage
+The GraPhlAn package consists in two main scripts: 1- graphlan.py 2- graphlan_annotate.py
+
+The first produces graphical output of an input tree in any of the three most popular format: Newick, PhyloXML, or text format. The second modifies any input tree (in any of the three standard format) adding additional information regarding structural or graphical aspects of the tree (like colors and style of the taxa, labels, shadows, heatmaps, ...); graphlan_annotate.py generates PhyloXML files that can be converted into images by graphlan.py.
+
+More specifically, here are all the options one can set for graphlan.py:
+
+
+
+
+
+***********************DIRECTIONS FOR USING HCLUST2 for Heat Cluster Creation:****************
+
+1. Create a new conda environment
+
+conda create -n hclust2
+conda activate hclust2
+
+2. Install Hclust2:
+
+
+
+3. Combine all of your individual sample output files into a single master abundance table that you wanted displayed. I.e. Merge the metaphlan tables you want to show. If you already have a  merged metaphlan table created from using the biobakery workflows pipeline which produces its own merged file for Metaphlan output, you can use that instead. It should be called something like "merged_abundance_table.tsv" or .txt.
+
+
+#To merge samples:
+merge_metaphlan_tables.py sample1_profile.txt sample2_profile.txt ... > merged_abundance_table.txt
+
+
+4) If you haven't already, make sure your table headers are relabeled to match your sample id naming conventions. I created a sample_mapping.sed file to do this for you with instructions found in "Sed script for renaming sample Ids in metaphlan abundance table".
+
+5) If you haven't already, process the merged_abundance_table to show only the level of phylogeny that you want to examine (hint: species is going to be far too many to reasonably show almost all of the time). Use the below listed command to get the genus or species listed WITHOUT the taxonomical inheritance (Kingdom, Phyla, etc.,.) before it:
+
+grep -E "s__|ID" merged_abundance_table_relabeled.txt| grep -v "t__" | sed "s/^.*|//g" > merged_abundance_table_species_relabeled.txt
+
+grep -E "g__|clade_name" merged_abundance_table_relabeled.txt | grep -v "s__" | sed -r 's/.*\|g__([^|]+)/\1/' > merged_abundance_table_genus_only_relabeled.txt
+
+#Note if you want to retain the taxonomical inheritance info, you can use the following command  structure instead, (i.e. just drop the sed commands at the end):
+
+grep -E "g__|clade_name" input_table.txt | grep -v "s__" > genus_only_table.txt
+
+
+6) Run your merged abundance table Metaphlan data through hclust2.
+
+Here is where it gets fun. It should be as easy as running the command below, but it's not.... skip ahead then come back to this.
+
+hclust2.py -i merged_abundance_table_genus_only_relabeled.txt \
+  -o metaphlan_heatmap.png \
+  --f_dist_f correlation \
+  --s_dist_f braycurtis \
+  --cell_aspect_ratio 0.5 \
+  -l \
+  --ftop 50 \
+  --fperc 99 \
+  --flabel_size 8 \
+  --slabel_size 8 \
+  --max_flabel_len 100 \
+  --max_slabel_len 100 \
+  --dpi 300
+
+
+Troubleshooting:
+
+1. You're going to get an error message that says:
+
+Traceback (most recent call last):
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/bin/hclust2.py", line 825, in <module>
+    hclust2_main()
+    ~~~~~~~~~~~~^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/bin/hclust2.py", line 779, in hclust2_main
+    read = ReadCmd( )
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/bin/hclust2.py", line 768, in __init__
+    Heatmap.input_parameters( p )
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/bin/hclust2.py", line 518, in input_parameters
+    pylab.register_cmap(name=n,cmap=my_cmap)
+    ^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'pylab' has no attribute 'register_cmap'
+
+
+2. Take the directory path shown above, go to your Desktop top taskbar, click Go, Click Go to to Folder, and drop that directory path in to get the the hclust2.py file.
+
+Find where it says "pylab.register_cmap"
+
+Replace that portion of the text, and only that portion of the text, with:
+
+mpl.colormaps.register
+
+So the line should look structurally similar to this after editing:
+
+mpl.colormaps.register(name='my_cmap_name', cmap=my_cmap_object)
+
+
+And then at the top of the file where all the other import statements are, add:
+
+import matplotlib as mpl
+
+
+Save the file, and try re-running the above command. 
+
+3. MORE TROUBLESHOOTING. You're going to get another long error. 
+
+/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/bin/hclust2.py:160: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  self.table['perc'] = self.table.apply(lambda x: stats.scoreatpercentile(x,perc),axis=1)
+Traceback (most recent call last):
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/bin/hclust2.py", line 825, in <module>
+    hclust2_main()
+    ~~~~~~~~~~~~^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/bin/hclust2.py", line 822, in hclust2_main
+    hm.draw()
+    ~~~~~~~^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/bin/hclust2.py", line 708, in draw
+    cbar = fig.colorbar(im, ax_cm, orientation = 'horizontal', spacing='proportional' if self.args.sqrt_scale else 'uniform' ) # , format = ticker.LogFormatterMathtext() )
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/figure.py", line 1315, in colorbar
+    cb = cbar.Colorbar(cax, mappable, **{
+        k: v for k, v in kwargs.items() if k not in NON_COLORBAR_KEYS})
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/colorbar.py", line 387, in __init__
+    self._reset_locator_formatter_scale()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/colorbar.py", line 1163, in _reset_locator_formatter_scale
+    self._process_values()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/colorbar.py", line 1099, in _process_values
+    self.norm.vmin, self.norm.vmax = mtransforms.nonsingular(
+    ^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/colors.py", line 2184, in vmin
+    self._changed()
+    ~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/colors.py", line 2212, in _changed
+    self.callbacks.process('changed')
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/cbook.py", line 366, in process
+    self.exception_handler(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/cbook.py", line 110, in _exception_printer
+    raise exc
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/cbook.py", line 361, in process
+    func(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/colorizer.py", line 297, in changed
+    self.callbacks.process('changed')
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/cbook.py", line 366, in process
+    self.exception_handler(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/cbook.py", line 110, in _exception_printer
+    raise exc
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/cbook.py", line 361, in process
+    func(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/image.py", line 335, in changed
+    super().changed()
+    ~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/colorizer.py", line 589, in changed
+    self.callbacks.process('changed', self)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/cbook.py", line 366, in process
+    self.exception_handler(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/cbook.py", line 110, in _exception_printer
+    raise exc
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/cbook.py", line 361, in process
+    func(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/colorbar.py", line 513, in update_normal
+    self._draw_all()
+    ~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/colorbar.py", line 540, in _draw_all
+    self._process_values()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/colorbar.py", line 1103, in _process_values
+    b = self.norm.inverse(b)
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/hclust2/lib/python3.14/site-packages/matplotlib/colors.py", line 2692, in inverse
+    raise ValueError("Invalid vmin or vmax")
+ValueError: Invalid vmin or vmax
+
+
+Actually way easier than that...
+
+conda uninstall matplotlib-base
+
+conda install pip
+
+pip install matplotlib==1.5.3
+
+https://pypi.org/project/matplotlib/1.5.3/#files
+
+
+pip install --upgrade certifi
+
+
+*********** GAVE UP AND SWITCHED TO A WINDOWS MACHINE.
+
+1. INSTALLED PYTHON 3.6 (honestly I started with 3.9 and downgraded after getting a bunch of errors... to 3.6. because 3.9 isn't compatible with the matplotlib version needed to run the hclust without errors)
+
+conda create -n hclust2_env -c python==3.6
+
+2. installed hclust2
+
+conda install -c bioconda hclust2
+
+3. Downloaded matplotlib 2.0 from from pypyi.org/project/matplotlib/2.0.0/#files, not the tar.gz but file listed below, and moved to location I was running command prompt from. 
+
+4. Have PIP install matplotlib version compatible with python
+
+pip install matplotlib-2.0.0-cp36-cp36m-win_am64.whl 
+
+5. Run you original command, but change all the "/" to ^ before pasting to allow for interpretation by Windows as multi-line argument. YOu also need to have the ability to paste enabled on your computer...
+
+hclust2.py -i merged_abundance_table_genus_only_relabeled_without_GG_Uncharacterized.txt ^
+  -o metaphlan_heatmap.png ^
+  --f_dist_f correlation ^
+  --s_dist_f braycurtis ^
+  --cell_aspect_ratio 1 ^
+  -l ^
+  --ftop 50 ^
+  --fperc 99 ^
+  --flabel_size 3 ^
+  --slabel_size 3 ^
+  --max_flabel_len 100 ^
+  --max_slabel_len 100 ^
+  --sdend_height 3 ^
+  --colorbar_font_size 5 ^
+  --dpi 300 ^
+  --metadata_separation 0.005
+
+
+#Did not use, but available to use:
+  --image_size 900
+
+
+Sample Selection (--sperc + --stop):Similarly, if you have a massive dataset and only want to visualize the samples with the highest (or lowest) values, --sperc sets the specific statistical percentile used to rank the samples before keeping the top --stop samples.
+
+Feature Filtering (--fperc + --ftop):When generating a heatmap, you rarely want to plot all hundreds of bacterial clades detected. If you set --ftop 50 --fperc 99, hclust2 calculates the 99th percentile of abundance for every species across all samples. It then ranks those species by that number and isolates the top \(50\) species.Example: Changing --fperc (e.g., from 99 to 100 [maximum abundance]) will change which species make the top --ftop list because you are measuring a different metric of their distribution.
+
+
+To create a heatmap of top differential pathways, use HUMAnN to profile pathways from your metagenomic sequences. Then, perform differential abundance testing (using tools like MaAsLin2 or lefse) to find significant pathways, format the resulting table into a matrix, and use hclust2 or an R package (like pheatmap) for plotting.
+
+
+6. SUCCESS!! Get a nice little heatmap.
+
+
