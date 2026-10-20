@@ -1,0 +1,766 @@
+Starting Over with QIIME 2 Directions
+Written: 05-01-26
+By: Kayla Borg
+
+BEFORE GETTING STARTED: 
+
+The data we have is 16s from University of Buffalo (UB Genomics and Bioinformatics Core). It is demultiplexed before being sent to us (sequences are separated by sample id, there are not multiple samples in a single file). This example will walk through how to handle paired-end read data, which is what I have.
+
+According to Josh's Dissertation, in alignment with previous information we were sent, it appears they use the combination adapters + V3 & V4 region amplification primers below that we'll want to trim before denoising our files (later).
+
+
+Amplicon Primers for Illumina 16S Metagenomic Sequencing -  
+Nextera Library Preparation
+
+PRIMER SET: V3-V4
+
+Primer Name:  V3 16S FWD Illumina Primer 
+
+Illumina Adapter Overhang Sequence – FWD  + 16S V3 Template Sequence – FWD
+
+5'  TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG	CCTACGGGNGGCWGCAG  3’
+
+
+Primer Name:  V4 16S REV Illumina Primer 
+
+Illumina Adapter Overhang Sequence – REV  + 16S V4 Template Sequence – REV
+ 
+5'  GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG	GACTACHVGGGTATCTAATCC  3’
+
+*****STEP ZERO: Trimmomatic
+
+
+THIS WAS THE OLD WAY OF TRIMMING... WE DON'T DO THIS ANYMORE... SKIP THIS STEP ZERO.
+
+
+#You can install trimmomatic within conda instead, via:
+
+conda install -c bioconda trimmomatic
+
+#Then you need to find the location of the adapters.fa file. Forums say you should be able to just reference the adapters.fa but that didn't work for me. 
+
+#Get the location by entering in the command line:
+
+find $CONDA_PREFIX -name "TruSeq3-PE.fa"
+
+#Then copy paste that into your Trimmomatic command at the end as shown in the next step.
+
+trimmomatic PE -threads 4 -phred33 \./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/raw/1_551_D0_S1_L001_R1_001.fastq.gz ./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/raw/1_551_D0_S1_L001_R2_001.fastq.gz \
+./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/trimmed/1_551_D0_S1_L001_R1_001PAIREDOUT.fastq.gz ./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/unpaired/1_551_D0_S1_L001_R1_001UNPAIREDOUT.fastq.gz \
+./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/trimmed/1_551_D0_S1_L001_R2_001PAIREDOUT.fastq.gz ./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/unpaired/1_551_D0_S1_L001_R2_001UNPAIREDOUT.fastq.gz \
+ILLUMINACLIP:/opt/homebrew/Caskroom/miniforge/base/envs/rachis-qiime2-2026.4/share/trimmomatic-0.40-0/adapters/TruSeq3-PE.fa:2:30:10 SLIDINGWINDOW:10:28 MINLEN:50
+
+#NOTE: DON'T FORGET TO REMOVE "PAIREDOUT" FROM THE END OF THE FILE NAME BEFORE YOU MOVE ONTO IMPORT INTO QIIME2, BECAUSE IF YOU USE THE DEFAULT IMPORTATION METHOD WITHOUT A MANIFEST FILE, IT WON'T KNOW HOW TO READ THE FILE NAME WITH THAT EXTRA STATEMENT ON THERE.
+
+*****STEP ONE Option A: PAIR YOUR READS AND IMPORT DATA INTO QIIME*****************************
+
+
+***STEP ONE OPTION A: Without Manifest File
+
+I honestly think you should be able to get away with not creating a manifest file... Josh used to import his data from University of Buffalo to QIIME using the following because of how the sample files are labeled when we get them back from University of Buffalo, but if you're worried about the pairs getting mapped to one another correctly, or are having issues with that, use the manifest method instead.
+
+qiime tools import \
+  --type "SampleData[PairedEndSequencesWithQuality]" \
+  --input-format CasavaOneEightLanelessPerSampleDirFmt \
+  --input-path raw_copy\
+  --output-path demux-paired-end.qza
+
+
+***STEP ONE OPTION B: With Manifest File
+
+- Since our data is demultiplexed, it is suggested that we use a fastq manifest file. "A fastq manifest file is a type of sample metadata file that maps sample identifiers to one or two absolute filepaths pointing at .fastq.gz (or .fastq) files, depending on whether you’re importing data from a single- or paried-end run."
+
+The following is an example of how that file should look for paired-end reads.
+
+File name: fq-manifest.tsv
+
+	sample-id forward-absolute-filepath   reverse-absolute-filepath
+	sample-1  /scratch/microbiome/sample1_R1.fastq.gz  /scratch/microbiome/sample1_R2.fastq.gz
+	sample-2  /scratch/microbiome/sample2_R1.fastq.gz  /scratch/microbiome/sample2_R2.fastq.gz
+
+Once you've constructed the fq-manifest.tsv, run the following command:
+
+qiime tools import \
+ --type 'SampleData[PairedEndSequencesWithQuality]' \
+ --input-path fq-manifest.tsv \
+ --output-path demux-paired-end.qza \
+ --input-format PairedEndFastqManifestPhred33V2
+
+#*********************************************************************************************
+COMPARISON NOTES:
+
+"In QIIME 2, both CasavaOneEightLanelessPerSampleDirFmt and PairedEndFastqManifestPhred33V2 are formats used to import demultiplexed, paired-end FASTQ files. The core difference lies in whether the input files follow strict Illumina Casava naming conventions or if you are defining their location manually via a manifest file. 
+
+
+1. CasavaOneEightLanelessPerSampleDirFmt
+This format is designed for data demultiplexed by Illumina’s CASAVA (or bcl2fastq) software. It expects a specific directory structure and file naming convention where QIIME 2 parses the sample IDs, lane numbers, and directions directly from the filename. 
+
+Best For: Data straight from an Illumina MiSeq/NextSeq that is already demultiplexed.
+Filename Format: sampleid_barcodeid_L001_R1_001.fastq.gz (Matches: .+_.+_L[0-9][0-9][0-9]_R[12]_001\.fastq\.gz).
+Requirements:
+Files must be in a single directory.
+Must be gzipped (.fastq.gz).
+Must contain _R1_ and _R2_ in the names.
+Pros: No need to create a manifest file.
+Cons: Very strict filename requirements; files must be renamed if they don't match exactly. 
+
+2. PairedEndFastqManifestPhred33V2
+This format provides maximum flexibility. Instead of relying on file names, you provide a tab-delimited text file (the "manifest") that explicitly maps sample IDs to their corresponding forward and reverse fastq file paths. 
+
+Best For: Data with custom naming conventions, data from multiple sources, or when you want to avoid renaming hundreds of files.
+Structure: A file containing: sample-id, forward-absolute-filepath, reverse-absolute-filepath.
+Requirements:
+Phred33 quality scores (standard for modern Illumina).
+Tabs must be used in the manifest (not spaces).
+Pros: Flexible; enables importing files from any location, regardless of name.
+Cons: Requires manual creation of the manifest file. ""
+#*********************************************************************************************
+
+
+*******STEP TWO: CHECK THE DATA QUALITY************************************
+
+# To visualize what you just did, the results:
+qiime demux summarize \
+  --i-data demux-paired-end.qza \
+  --o-visualization demux.qzv
+
+#Then you can drag the demux.qzv file into https://view.qiime2.org/ to view it. 
+#Use the interactive plot tab to determine where your truncation points should be for the forward and reverse reads (Per Josh: if score drops below 32/33 consistently, truncate everything after that). 
+
+
+**********STEP THREE: REMOVE ADAPTERS AND PRIMERS*******************************
+
+#Use cutadapt (from within QIIME install) to remove adapters and primers (https://cutadapt.readthedocs.io/en/stable/)
+
+#Note: Dada2 can do some of this (removing adapters) for us during the denoising step later, but there is a reason to use cutadapt first (http://forum.qiime2.org/t/removing-primers-cutadapt-vs-denoising/20376/2).
+
+#Note:
+
+Question: "My question is in relation to the q2-cutadapt output (attached). I find that about 50% of reads from all my samples are removed after this step. If I understand correctly, this is because the primers were not detected in these removed reads.
+
+Answer: "Add the flags --p-match-read-wildcards and --p-match-adapter-wildcards to your command. This will allow matching of IUPAC wild cards such as H, V, N, etc... This is why your primers are not currently being trimmed. So, adding these flags, at least the --p-match-adapter-wildcards flag should help.""
+
+#COMMAND TO RUN:
+
+qiime cutadapt trim-paired \
+  --i-demultiplexed-sequences demux-paired-end.qza \
+  --p-front-f "CCTACGGGNGGCWGCAG" \
+  --p-front-r "GACTACHVGGGTATCTAATCC" \
+  --p-adapter-f "TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG" \
+  --p-adapter-r "GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG" \
+  --p-quality-cutoff-3end 30 \
+  --p-quality-cutoff-5end 30 \
+  --p-cores 6 \
+  --p-discard-untrimmed \
+  --p-match-read-wildcards \
+  --o-trimmed-sequences trimmed-demux.qza
+
+#TO SEE THE CHANGES:
+
+qiime demux summarize \
+	--i-data trimmed-demux.qza \
+	--o-visualization trimmed-demux.qzv
+qiime tools view trimmed-demux.qzv
+
+#Note: I first ran the command with just the quality-cutoff-3nd, and it didn't look like the reverse read got trimmed at all, so I tried re-running it adding the quality-cutoff-5end. It still doesn't look like it did anything to trim the reverse read. don't know if the cutoff-5end is actually doing anything. It also didn't look like the reverse read was trimmed on quality with just the quality-cuttoff-3nd or with the cutoff-5end added.
+
+Worth noting, Trimmomatic lets you truncate the end of your reads when the quality starts to taper off, which is a different kind of trimming. Go read the documentation on Dada and Trimmomatic to better understand, compare and contrast. Josh used to use Trimmomatic. It was giving me issues here, and cutadapt is supported by (and within) Qiime, so I switched to using that. 
+
+**********STEP FOUR: DENOISE THE DATA************************************************
+
+#Note: There are two options for denoising data from within QIIME. We're going to use Dada.
+#Note: THIS STEP MAY TAKE DAYS TO RUN. 
+#Note: Make sure to set your thread count at an appropriate # relative to your machine's capabilities, otherwise it may run for a few minutes and then error out with some obscure message that you may not necessarily recognize is related to your thread count.
+
+#Note: Truncation values should be set based on your interpretation of the demux.tsv. When the quality score drops below an acceptable range (e.g. 32/33) consistently, the sequence sholud be truncated. If you don't want to truncate the sequence for any rason, you can put a value of 0 for that flag in the command below. 
+
+#NOTE: SOMETIMES IT IS A BAD IDEA TO TRUNCATE HERE. IF YOU MERGE % is LOW OR YOUR NON-CHIMERIC % is LOW, CONSIDER ADJUSTING YOUR PARAMETERS FOR TRIMMING IN BOTH CUTADAPT AND DADA.
+
+#trun-len-f will truncate the forward sequence after the # of basepairs you list
+#trun-len-f will truncate the reverse sequence after the # of basepairs you list
+#demux_seqs.qza is a zip file with each read which allows us to keep track of which read belongs to which sample after denoising.
+#dada2_table.qza will output - sample ids and # of sample features but no interest in sequences
+#dada2_rep_set.qza - has sequences, output of amplicon seq variants and all of the corrected seq are given a # called a hash, and whenever the same seq are found, it produces the same hash so easier to refer to same sequences by hash instead of referring to them by their entire name. 
+#dada2_stats.qza - Denoising stats, tells us how the denoising step went.
+
+Run the command:
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs ./demux-paired-end.qza \
+  --p-trunc-len-f 0 \
+  --p-trunc-len-r 0 \
+  --p-n-threads 6 \
+  --o-table ./table.qza \
+  --o-representative-sequences ./rep_set.qza \
+  --o-denoising-stats ./stats.qza \
+  --o-base-transition-stats base-transition-stats.qza
+
+
+**********STEP FIVE: CHECK THE RESULTS OF DENOISING********************************************
+#Note: Make sure you didn't lose too much of your data to denoising/filtering or merging. Make sure your % of non-chimeras is reasonable. 
+
+#Note: Chimeras are created during PCR when unrelated molecules become tangled and then are amplified as a single unit. They can also result from contamination. Check your MultiQC file provided by University of Buffalo to see if you have contamination issues or Mycoplasma >7%.
+
+
+To visualize:
+
+qiime metadata tabulate \
+--m-input-file ./stats.qza \
+--o-visualization ./stats.qzv 
+
+qiime tools view stats.qzv
+
+**********STEP SIX: VISUALIZE YOUR DATA************************************************
+
+#Note: Need to create metadata file to "frame" structure of how data should be imported with labels and categories. Metadata file can be .txt or .tsv -- JUST MAKE SURE YOU USE THE COMMANDS THAT REFERENCE IT WITH THE PROPER EXTENSION.
+
+#Example of metadata.txt :
+
+sample-id IgA_Status  Cage_Num
+#q2:types Categorical Categorical
+C1_Neg  Negative  1
+C1_Pos  Positive  1
+C2_Neg  Negative  2
+C2_Pos  Positive  2
+C3_Neg  Negative  3
+C3_Pos  Positive  3
+
+qiime metadata tabulate \
+--m-input-file metadata.tsv \
+--o-visualization tabulated-metadata.qzv
+
+qiime tools view tabulated-metadata.qzv
+
+
+GENERATE A FEATURE TABLE SUMMARY: 
+
+#Table that outputs the frequency is useful for later when we need to set minimum/maximum frequncies when looking at alpha/beta diversity. Essentially # of features (species) found in each sample as a min/max.
+
+
+qiime feature-table summarize \
+  --i-table table.qza \
+  --m-metadata-file metadata.tsv \ 
+  --o-summary table.qzv \
+  --o-feature-frequencies feature-frequencies.qza \
+  --o-sample-frequencies sample-frequencies.qza
+
+qiime feature-table tabulate-seqs \
+  --i-data rep_set.qza \
+  --o-visualization rep-seqs.qzv
+
+  
+qiime tools view table.qzv
+
+"The feature-table summarize command will give you information on how many sequences are associated with each sample and with each feature, histograms of those distributions, and some related summary statistics. The feature-table tabulate-seqs command will provide a mapping of feature IDs to sequences, and provide links to easily BLAST each sequence against the NCBI nt database. The latter visualization will be very useful later in the tutorial, when you want to learn more about specific features that are important in the data set."
+
+*********GENERATE A TREE FOR PHYLOGENETIC ANALYSIS:
+
+qiime phylogeny align-to-tree-mafft-fasttree \
+  --i-sequences rep_set.qza \
+  --o-alignment aligned-rep-seqs.qza \
+  --o-masked-alignment masked-aligned-rep-seqs.qza \
+  --o-tree unrooted-tree.qza \
+  --o-rooted-tree rooted-tree.qza
+
+  NOTE: rep_set.qza is repeatedly referred to as rep-seqs.qza in the documentation/tutorial as of 5/4/26. So when you see rep-seqs.qzv, know that it is based on the rep_set.qza data.
+
+
+*********ALPHA AND BETA DIVERSITY ANALYSIS:
+An important parameter that needs to be provided to this script is --p-sampling-depth, which is the even sampling (i.e. rarefaction) depth. Because most diversity metrics are sensitive to different sampling depths across different samples, this script will randomly subsample the counts from each sample to the value provided for this parameter. For example, if you provide --p-sampling-depth 500, this step will subsample the counts in each sample without replacement so that each sample in the resulting table has a total count of 500. If the total count for any sample(s) are smaller than this value, those samples will be dropped from the diversity analysis. Choosing this value is tricky. We recommend making your choice by reviewing the information presented in the table.qzv file that was created above. Choose a value that is as high as possible (so you retain more sequences per sample) while excluding as few samples as possible.
+
+NOTE: UPDATE THE COMMAND BELOW WITH YOUR DETERMINED SAMPLING DEPTH
+
+qiime diversity core-metrics-phylogenetic \
+  --i-phylogeny rooted-tree.qza \
+  --i-table table.qza \
+  --p-sampling-depth 691826 \
+  --m-metadata-file metadata.tsv \
+  --output-dir diversity-core-metrics-phylogenetic
+
+In this case, a sampling depth of 691826 retained 20,062,954 (66.32%) observations in 29 (90.63%) samples at the specified sampling depth. 66.32% is the highest percentage of observations that can be retained found across the 0-2284002 spectrum of possible sampling depths for our data after reviewing the interactive Sample Detail tab from the table.qzv results when placed in QIIME viewer, it also maintains a very high percentage of the samples, which makes it seem like a good choice. 
+
+Alternatively:
+
+489512 sampling depth retained 15,174,872 (50.16%) observations in 31 (96.88%) samples at the specified sampling depth.
+
+615214 sampling depth etained 18,456,420 (61.01%) observations in 30 (93.75%) samples at the specified sampling depth.
+
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity diversity-core-metrics-phylogenetic/faith_pd_vector.qza \
+  --m-metadata-file metadata.tsv \
+  --o-visualization faith-pd-group-significance.qzv
+
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity diversity-core-metrics-phylogenetic/evenness_vector.qza \
+  --m-metadata-file metadata.tsv \
+  --o-visualization evenness-group-significance.qzv
+
+
+  "In the sample data set, no continuous sample metadata columns (e.g., days-since-experiment-start) are correlated with alpha diversity, so we won’t test for those associations here. If you’re interested in performing those tests (for this data set, or for others), you can use the qiime diversity alpha-correlation command."
+
+#Directions for using the alpha-correlation command:
+https://docs.qiime2.org/2024.10/plugins/available/diversity/alpha-correlation/
+
+ # example for alpha correlation faith pd
+
+ qiime diversity alpha-correlation \
+    --i-alpha-diversity diversity-core-metrics-phylogenetic/faith_pd_vector.qza \
+    --m-metadata-file metadata.tsv \
+    --o-visualization faith_pd_alpha_correlation_visualization.qzv
+
+ # example for alpha Pileou's Evenness
+
+ qiime diversity alpha-correlation \
+    --i-alpha-diversity diversity-core-metrics-phylogenetic/evenness_vector.qza \
+    --m-metadata-file metadata.tsv \
+    --o-visualization evenness_alpha_correlation_visualization.qzv
+
+#Note: So are "alpha-correlations" correlations by fields with numeric values and "alpha-group" is for comparisons by categorical groups? Seems so, but not sure what the difference is past that... 
+
+"Why alpha-group-significance Fails with Continuous DataMethodology Design: This visualizer performs non-parametric tests—specifically the Kruskal-Wallis test (and pairwise Wilcoxon tests)—which require categorical groupings to compute rank-based differences."
+
+
+*************BETA DIVERSITY ANALYSIS*****************
+
+"Next we’ll analyze sample composition in the context of categorical metadata using PERMANOVA (first described in Anderson (2001)) and the beta-group-significance command. 
+
+These will test whether distances between samples within a group (e.g. all cecum samples), are more similar to each other then they are to samples from the other groups (e.g. fecal pellet). 
+
+If you call this command with the --p-pairwise parameter, as we’ll do here, it will also perform pairwise tests that will allow you to determine which specific pairs of groups (e.g., cecum and fecal pellet) differ from one another, if any. This command can be slow to run, especially when passing --p-pairwise, since it is based on permutation tests. So, unlike the previous commands, we’ll run beta-group-significance on specific columns of metadata that we’re interested in exploring, rather than all metadata columns to which it is applicable. Here we’ll apply this to our unweighted UniFrac distances, using two sample metadata columns, as follows."
+
+
+#Note: So it sounds like you can run the below listd commands directed at different files that were output into the diversity-core-metrics-phylogenetic folder when running the alpha commands earlier, and you can also specify which columns you want to group values from (e.g. sample-site). I.e. you can swap out the i-distance-matrix and the m-metadata-column values.
+
+#Note: This can only be run with categorical (not numeric) type values
+
+qiime diversity beta-group-significance \
+  --i-distance-matrix diversity-core-metrics-phylogenetic/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --m-metadata-column antibiotic-usage \
+  --p-pairwise \
+  --o-visualization unweighted-unifrac-abx-usage-group-significance.qzv
+
+
+qiime diversity beta-group-significance \
+  --i-distance-matrix diversity-core-metrics-phylogenetic/bray_curtis_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --m-metadata-column antibiotic-usage \
+  --p-pairwise \
+  --o-visualization bray-curtis-abx-usage-group-significance.qzv
+
+
+From the documentation: 
+
+"Again, none of the continuous sample metadata that we have for this data set are correlated with sample composition, so we won’t test for those associations here. If you’re interested in performing those tests, you can use the qiime metadata distance-matrix in combination with qiime diversity mantel and qiime diversity bioenv commands."
+
+From the forum:
+
+"I am interested in associating continuous variables with sample composition changes. It states in your moving pictures tutorial to utilise the three commands; 1)qiime metadata distance-matrix, 2)qiime diversity mantel and 3)qiime diversity bioenv to do this.
+
+Sounds like your continuous variable may be time. If you are also sampling the same individuals/sites over time, you should check out q2-longitudinal. If you are just trying to associate change in beta diversity with change in time, then mantel will accomplish this. However, q2-longitudinal will be much more flexible, e.g., to use linear mixed effect models to examine changes across time in relation to multiple metadata variables (e.g., time and treatment categories) and individual variation. And you can use other types of data as inputs, e.g., alpha diversity, pcoa, or abundances of specific features in a feature table.
+
+You could also check out q2-gneiss. This will relate differences in feature abundance with one or more continuous/categorical metadata columns."
+
+https://forum.qiime2.org/t/continuous-variable-correlation-with-compositon/3757
+
+*****GENERATE BETA DIVERSITY VISUALIZATIONS WITH NUMERIC/CONTINUOUS TYPE METADATA (e.g. time)
+
+First you have to generate a new "metadata type" file that is a matrix which specifies which specifies the column that has continuous type data, using the command below:
+
+qiime metadata distance-matrix \
+  --m-metadata-file metadata.tsv \
+  --m-metadata-column day \
+  --o-distance-matrix day-distance-matrix.qza
+
+It will look like this:
+
+      s1     s2     s3
+s1    0       1      2
+s2    1       0      1
+s3    2       1      0
+
+Compared to the old metadata table which looks like this:
+
+#SampleID   day
+s1           0
+s2           1
+s3           2
+
+The output file (day-distance-matrix.qza) can now be input into qiime's mantel tool alongside whichever qiime diversity core-metrics output file you wish to look at (e.g. unifrac distance between all sample pairs)
+
+
+Like so:
+
+
+[ADD directions here...]
+
+
+Conversely, if you are looking at changes within the same subjects over time (e.g. a "before" and "after" for a single patient), you'd want to use q2-longitudinal
+. 
+https://docs.qiime2.org/2018.2/tutorials/longitudinal/
+
+BUT... This means you need the same sample id across rows to link the time/longitudinal values. As our data currently stands, it isn't setup this way. Mouse 551 samples from Day 0 and Day 10 are assigned different "sample-id" values. So you have to create a separate column in the metadata table that lists the common identifier (e.g. "551") and put that column name under the --p-individual-id-column flag when you run the q2-longitudinal command below. https://forum.qiime2.org/t/q2-longitudinal-differences/29812/2
+
+sample-id
+1-551-D0
+5-551-D10
+
+
+Note
+
+Many of the actions in q2-longitudinal take a metric value as input, which is usually a column name in a metadata file or a metadata-transformable artifact (including alpha diversity vectors, PCoA results, and many other QIIME 2 artifacts), or a feature ID in a feature table. The names of valid metric values in metadata files and metadata-transformable artifacts can be checked with the metadata tabulate command. Valid feature names (to use as metric values associated with a feature table) can be checked with the feature-data summarize command.
+
+
+Pairwise difference comparisons
+Pairwise difference tests determine whether the value of a specific metric changed significantly between pairs of paired samples (e.g., pre- and post-treatment).
+
+This visualizer currently supports comparison of feature abundance (e.g., microbial sequence variants or taxa) in a feature table, or of metadata values in a sample metadata file. Alpha diversity values (e.g., observed sequence variants) and beta diversity values (e.g., principal coordinates) are useful metrics for comparison with these tests, and should be contained in one of the metadata files given as input. In the example below, we will test whether alpha diversity (Shannon diversity index) changed significantly between two different time points in the ECAM data according to delivery mode.
+
+#Note: If you need to turn a .qza file into a .qzv file so you can take the data output by an analysis and feed it into the pairwise-differences, you can do so using this command:
+
+qiime tools export \
+  --input-path shannon_vector.qza \
+  --output-path shannon
+
+  Note: Output-path here is the directory name. There will be a file within it, in this case, named "alpha-diversity", where the shannon vector values will appear next to the id column in a column titled "shannon entropy". You can then take the values from that column and paste them into your metadata file and then refer to them in your --p-metric flag. In theory, the documenet says it's supposed to be able to find it another way, but it wasn't working for me originally...Then this did.
+
+qiime longitudinal pairwise-differences \
+  --m-metadata-file metadata_with_individual_id_column.tsv \
+  --m-metadata-file diversity-core-metrics-phylogenetic/shannon_vector.qza \
+  --p-metric shannon_entropy \
+  --p-group-column antibiotic-usage \
+  --p-state-column day \
+  --p-state-1 0 \
+  --p-state-2 40 \
+  --p-individual-id-column individual-id \
+  --p-replicate-handling random \
+  --o-visualization longitudinal-day_and_abx-pairwise-differences.qzv
+
+
+Pairwise distance comparisons
+The pairwise-distances visualizer also assesses changes between paired samples from two different “states”, but instead of taking a metadata column or artifact as input, it operates on a distance matrix to assess the distance between “pre” and “post” sample pairs, and tests whether these paired differences are significantly different between different groups, as specified by the group-column parameter. Here we use this action to compare the stability of the microbiota compositions of vaginally born and cesarean-delivered infants over a 12-month time frame in the ECAM data set.
+
+
+NOTE: For this one, I didn't need to conver the unweighted_unifrac_distance_matrix into a .tsv and move data into the metadata file at all...
+
+
+qiime longitudinal pairwise-distances \
+  --i-distance-matrix diversity-core-metrics-phylogenetic/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata_with_individual_id_column.tsv \
+  --p-group-column antibiotic-usage \
+  --p-state-column day \
+  --p-state-1 0 \
+  --p-state-2 40 \
+  --p-individual-id-column individual-id \
+  --p-replicate-handling random \
+  --o-visualization longitudinal-day_and_abx-pairwise-distances.qzv
+
+  I wanted to figure out how to calculate a longitudinal pairwise comparison using the jaccard distance. You first need to create a "first distances" file using the original jaccard_distance_matrix.qza you ran from earlier and the metadata.tsv file you created with the added individual-id to be used by the longitudinal pairwise part. 
+
+qiime longitudinal first-distances \
+  --i-distance-matrix diversity-core-metrics-phylogenetic/jaccard_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-state-column days \
+  --p-individual-id-column individual-id \
+  --o-first-distances jaccard_first_distances.qza
+
+  Nvm."QIIME forum: Theoretically PERMANOVA ( i.e. the beta-group-significance analysis output) is not supposed to be used on longitudinal data, due to temporal autocorrelation issues (I believe this is discussed in one of Marti Anderson's first couple papers on PERMANOVA, so you should check there for more details).""
+
+
+"Finally, ordination is a popular approach for exploring microbial community composition in the context of sample metadata. We can use the Emperor tool to explore principal coordinates (PCoA) plots in the context of sample metadata. While our core-metrics-phylogenetic command did already generate some Emperor plots, we want to pass an optional parameter, --p-custom-axes, which is very useful for exploring time series data. The PCoA results that were used in core-metrics-phylogeny are also available, making it easy to generate new visualizations with Emperor. We will generate Emperor plots for unweighted UniFrac and Bray-Curtis so that the resulting plot will contain axes for principal coordinate 1, principal coordinate 2, and days since the experiment start. We will use that last axis to explore how these samples changed over time."
+
+qiime emperor plot \
+  --i-pcoa diversity-core-metrics-phylogenetic/unweighted_unifrac_pcoa_results.qza \
+  --m-metadata-file metadata.tsv \
+  --p-custom-axes day \
+  --o-visualization unweighted-unifrac-emperor-days-since-experiment-start.qzv
+
+NOTE: IF YOU USE THE OTHER METADATA.TSV FILE WHERE YOU ADDED INDIVIDUAL-SAMPLE-ID ABOVE, YOU CAN GROUP BY THAT HERE INSTEAD TOO... SUPER USEFUL.
+
+Updated Like so:
+qiime emperor plot \
+  --i-pcoa diversity-core-metrics-phylogenetic/unweighted_unifrac_pcoa_results.qza \
+  --m-metadata-file mmetadata_with_individual_id_column.tsv \
+  --p-custom-axes day \
+  --o-visualization unweighted-unifrac-emperor-days-since-experiment-grouped-by-sample-id-start.qzv
+
+
+qiime emperor plot \
+  --i-pcoa diversity-core-metrics-phylogenetic/bray_curtis_pcoa_results.qza \
+  --m-metadata-file metadata_with_individual_id_column.tsv \
+  --p-custom-axes day \
+  --o-visualization bray-curtis-emperor-days-since-experiment-start.qzv
+
+
+Alpha rarefaction plotting
+In this section we’ll explore alpha diversity as a function of sampling depth using the qiime diversity alpha-rarefaction visualizer. This visualizer computes one or more alpha diversity metrics at multiple sampling depths, in steps between 1 (optionally controlled with --p-min-depth) and the value provided as --p-max-depth. At each sampling depth step, 10 rarefied tables will be generated, and the diversity metrics will be computed for all samples in the tables. The number of iterations (rarefied tables computed at each sampling depth) can be controlled with --p-iterations. Average diversity values will be plotted for each sample at each even sampling depth, and samples can be grouped based on metadata in the resulting visualization if sample metadata is provided with the --m-metadata-file parameter.
+
+
+[SKIPPED ALL THIS, NEED TO GO BACK AND DO IT....]
+
+qiime diversity alpha-rarefaction \
+  --i-table table.qza \
+  --i-phylogeny rooted-tree.qza \
+  --p-max-depth 855726 \
+  --m-metadata-file metadata.tsv \
+  --o-visualization alpha-rarefaction.qzv
+
+
+NOTE: How to choose sampling depth according to rarefaction plot:
+
+1. Open your table.qzv in Qiime view: https://view.qiime2.org/
+Look at frequency per sample:
+
+Frequency per sample
+Frequency
+Minimum frequency	384,284
+1st quartile	751,627.2
+Median frequency	855,726.5
+3rd quartile	947,229.8
+Maximum frequency	2,284,002
+Mean frequency	945,311.7
+
+"To determine the right alpha rarefaction sample depth, you must balance maximizing your sequencing depth with retaining enough samples. Your chosen depth should fall within the range where the rarefaction curves (such as observed species or Shannon diversity) visibly flatten out (plateau), meaning additional sequences yield minimal new taxonomic discoveries.Reviewing the following key signs helps verify your selection:The Plateau Effect: The curves on your plot should level off horizontally. If your curves are still pointing straight up at your chosen depth, your sample depth is too low, and you are missing a significant portion of the microbial diversity in those samples.Sample Retention: Check how many samples you are forced to discard. If you pick a very high depth, you will capture maximum diversity but might lose critical, low-read samples.
+
+Setting your alpha rarefaction sampling depth too low causes artificial loss of diversity, underrepresented rare taxa, and a false flattening (plateau) of your rarefaction curves. This strips away statistical power, making it difficult to detect true biological differences between your samples.
+
+Inflated False Negatives: By shrinking the number of reads supporting your diversity estimates, you lose the sensitivity to detect actual differences between treatment groups.Loss of Rare Taxa: You will consistently miss low-abundance microbes that only appear in deeper sequencing, skewing the richness and evenness profile of your samples.Misleading Plateaus: Curves can artificially "level out" at a low sampling depth. This suggests you have captured all community diversity, but in reality, you have simply choked the data.Sample Discard Imbalance: While a low threshold may seem like a good way to save shallowly sequenced samples, you end up discarding highly informative, deeply sequenced samples or over-truncating them to the lowest common denominator.
+
+If you set your alpha rarefaction sampling depth too high, you will drop a large number of your samples from the analysis. You risk throwing away valuable data, making your downstream estimates less reliable and potentially biasing your results.
+
+Sample Loss: Rarefying forces the dataset to subsample all samples to a single, even depth. If your chosen depth is higher than the read count of your shallowest samples, those samples will be completely discarded.Decreased Statistical Power: Throwing away samples shrinks your dataset, which reduces your ability to accurately detect true biological differences between your groups.Distorted Diversity Estimates: Subsampling too deeply forces the algorithm to generate artificial estimations on sparse data, which can increase variability and hide true diversity.
+
+Yes, you should use the same sampling depth for both QIIME 2 workflows. Both qiime diversity alpha-rarefaction and qiime diversity core-metrics-phylogenetic require an even sampling depth to standardize libraries. Keeping this value identical ensures that your diversity comparisons are statistically valid and directly comparable across the board.
+
+**************************************************TAXONOMIC ANALYSIS************************
+
+"The taxonomic classifier used here is trained on Greengenes 13_8, which is an outdated reference database. The reason we use it here is because the reference data is relatively small, so classification can be run quickly on most modern computers with this classifier. To remind readers that they shouldn’t use this classifier in practice, we’re going to refer to the one we build here as our suboptimal 16S rRNA classifier.
+
+When you’re ready to work on your own data, one of the choices you’ll need to make is what classifier to use for your data. You can discover pre-trained classifiers on the QIIME 2 Library Resources page (https://library.qiime2.org/data-resources). If you don’t find a classifier that will work for you there, you may be able to find one on the Forum, or you can learn how to train your own by referencing the RESCRIPt documentation.
+
+We recommend the use of environment-weighted classifiers, as described in Kaehler et al., (2019), and you can discover these from the Resources page."
+
+
+Training the (suboptimal) 16S rRNA taxonomy classifier
+Here we are going to train our 16S rRNA classifier. Training a taxonomy classifier can be a slow and memory-intensive step, but the suboptimal classifier is fast to train because we are using the reference sequences following clustering at 85% similarity, which gives us a relatively small reference dataset (about 5000 sequences).
+
+We’ll use these data to train a Naïve Bayes taxonomy classifier, using q2-feature-classifier. This gives us our taxonomy classifier as a QIIME 2 artifact.
+
+
+NOTE: I decided to go to an older reference library version because it could be downloaded from the QIIME site and they are in the process of transitioning to having you go get the stuff externally. The newest edition is 2026.4.
+
+Version used:
+
+QIIME 2 2024.5 - 2026.1
+Naive Bayes Classifiers
+Silva 138 99% OTUs full-length sequences
+
+Download: Silva 138 99% OTUs full-length sequences
+UUID: 70b4b5f4-8fce-40bd-b508-afacbc12a5ed
+SHA256: c08a1aa4d56b449b511f7215543a43249ae9c54b57491428a7e5548a62613616
+Sklearn Version: 1.4.2
+Date Trained: 2024-05-30
+Notes: Silva species taxonomy may be unreliable
+Citations: Robeson et al. (2020), Bokulich et al. (2018), Silva
+
+"The Silva classifiers provided here include species-level taxonomy. While Silva annotations do include species, Silva does not curate the species-level taxonomy so this information may be unreliable. In a future version of QIIME 2 we will no longer include species-level information in our Silva taxonomy classifiers. This is discussed on the QIIME 2 Forum here (see Species-labels: caveat emptor!)."
+
+https://www.arb-silva.de/current-release/QIIME2/2025.7/SSU/full-length/uniform
+
+I downloaded the above listed pre-trained classifier (silva-138-99-nb-classifier.qza) and moved it to the directory I'm working out of.
+
+I'm also going to skip the classifier training step shown below:
+
+#Train classifier
+qiime feature-classifier fit-classifier-naive-bayes \
+  --i-reference-reads reference-sequences.qza \
+  --i-reference-taxonomy reference-taxonomy.qza \
+  --o-classifier suboptimal-16S-rRNA-classifier.qza
+
+"No, you do not have to train the classifier yourself if you do not want to. You have two main options when using the SILVA database in QIIME 2:
+
+1. Download a Pre-trained Classifier (Easiest)The QIIME 2 team and the SILVA developers provide ready-to-use, pre-trained Naive Bayes classifiers for most QIIME 2 releases. You can simply download the appropriate .qza file directly from the QIIME 2 Data Resources page.The Benefit: It saves you significant time and heavy RAM/CPU usage (training a SILVA classifier is highly resource-intensive).The Catch: These pre-trained classifiers typically use full-length \(16S\) reference sequences.
+
+2. Train Your Own Classifier (Custom & Often More Accurate)You can download the raw SILVA reference sequences and taxonomy files to train a classifier customized specifically for the laboratory primers you used (e.g., \(V4\) or \(V3\) - \(V4\) regions).The Benefit: Trimming your reference database to match your specific primers often yields higher accuracy and better resolution during taxonomic assignment.The Catch: You will need to use either standard QIIME 2 tools or the RESCRIPt plugin to format and train the data. You will also need a computer with a good amount of RAM (often \(16\) GB or more).Which should you choose?If you are doing a standard survey of a community, using a pre-trained full-length classifier is perfectly fine and highly convenient. If you are looking for the absolute highest resolution for specific sub-regions, you should use RESCRIPt or standard QIIME 2 commands to train your own."
+
+
+It is not necessary to use a classifier that was trained on sequences that were trimmed based on the primers you sequenced with. In practice we notice very minor differences, if any, relative to those trained on full-length sequences. We are therefore no longer providing region-specific classifiers, such as the 515F/806R region-specific classifiers, that we have provided in the past. Far more impactful is the use of environment-weighted classifiers, as described in Kaehler et al., (2019). We now distribute these, and currently have these tagged as EXPERIMENTAL below.
+
+Classifiers are specific to versions of scikit-learn (Pedregosa et al. (2011)), a dependency of q2-feature-classifier, and they are therefore generally annotated based on the version range of QIIME 2 that they will work with. Be sure to match classifier versions with the version of QIIME 2 that you’re using.
+
+#USE CLASSIFIER**********************************************************
+
+qiime feature-classifier classify-sklearn \
+  --i-classifier SILVA138.2_SSURef_NR99_uniform_classifier_full-length.qza \
+  --i-reads rep-seqs.qza \
+  --o-classification taxonomy.qza
+
+qiime metadata tabulate \
+  --m-input-file taxonomy.qza \
+  --o-visualization taxonomy.qzv
+
+  OKAY back tracking a bit... That was a mess. So... Qiime2 released version 2026.4 in... you guessed it, April of 2026. It is currently May 9th of 2026. Unfortunately, starting about a year ago, they also offloaded the responsibility of maintaining pre-trained Silva libraries on their sides, back to Silva. Silva has not produced a compatible (determined by scikit-learn) updated reference database yet. And the newest version of Qiime can't work with an older Silva database. Rock and a hard place... So I thought "well, why don't I just spin up another conda instance, install an older version of Qiime that's compatible with an older Silva DB, the one from last year, and we're golden, right?" Wrong. I couldn't even get the older version of Qiime properly installed. Conda was throwing the following errors:
+
+  "Downloading and Extracting Packages:
+                                                                                                                
+Preparing transaction: done                                                                                     
+Verifying transaction: done                                                                                     
+Executing transaction: done                                                                                     
+ERROR conda.core.link:_execute(1033): An error occurred while installing package 'bioconda::bioconductor-genomeinfodbdata-1.2.11-r43hdfd78af_1'.                                                                                
+Rolling back transaction: done                                                                                  
+                                                                                                                
+LinkError: post-link script failed for package bioconda::bioconductor-genomeinfodbdata-1.2.11-r43hdfd78af_1     
+location of failed script: /opt/homebrew/Caskroom/miniforge/base/envs/rachis-qiime2-2026.1/bin/.bioconductor-genomeinfodbdata-post-link.sh                                                                                      
+==> script messages <==                                                                                         
+<None>                                                                                                          
+==> script output <==                                                                                           
+stdout:                                                                                                         
+stderr:                                                                                                         
+return code: 1                                                                                                  
+                                                                                                                
+()"
+
+So... I thought... let's just do this on a Windows machine, it has Windows options, right? Well, kind of. It has a Linux option which you can use via Windows WSL. 
+
+So I wrote seperate instructions for how to setup the older version of Qiime on a Windows computer so you can run the following command using the second to last version of Qiime and the second to last (most recent compatible) Silva database, and I transferred the  rep-seqs.qza file to the Windows computer, downloaded the Silva db there through Qiime's website of Resources - Classifiers:
+
+#Note: The latest version of Qiime2 is 2026.4
+#The second to last version of Qiime 2 is 2026.1
+
+#The latest version of Silva is SILVA138.2_SSURef_NR99_uniform_classifier_full-length.qza
+#The second ot last version of Silva is silva-138-99-nb-classifier.qza
+
+qiime feature-classifier classify-sklearn \
+  --i-classifier silva-138-99-nb-classifier.qza \
+  --i-reads rep-seqs.qza \
+  --o-classification taxonomy.qza
+
+***************************************On a Windows computer*****************************
+
+*Note. My computer was a jerk and kept saying "operation not permitted". So I kept having to add "sudo" before wget commands to get them to run.
+
+#Enable WSL for Linux:
+
+Navigate to the control panel>"Turn Windows features on or off"
+(easiest way is to search for "Turn Windows.." in the Start menu search bar)
+
+In the pop-up menu, check the box next to "Windows Subsystem for Linux"
+
+Restart your computer for the changes to take effect.
+
+#From command prompt, type:
+
+wsl --install
+
+#This will prompt you to setup a user name and password.
+
+#Now, from within WSL in the command prompt:
+
+#To install Miniconda:
+
+#Download it:
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+
+#Install it from the downloaded files:
+bash Miniconda3-latest-Linux-x86_64.sh
+
+#Restart bash to apply the changes
+source ~/.bashrc
+
+#Confirm the installation by checking the version
+conda --version
+
+The directions are going to be a bit different here (maybe unnecessarily complicated) because I'm trying to install an older version of QIIME, not the latest version because of an issue I'm running into with the silva library not being able via scikit-learn becaues a version miss match problem.
+
+
+#Go to : https://library.qiime2.org/quickstart/qiime2
+#Select from the dropdown the verson of QIIME2 you want to install.
+#Scroll down to "install the base distribution's conda environment".
+#Select Linux/Windows WSL from the tabs. Copy and paste the code it shows into the WSL loaded command prompt.
+
+conda env create \
+  --name rachis-qiime2-2026.1 \
+  --file https://raw.githubusercontent.com/qiime2/distributions/refs/heads/dev/2026.1/amplicon/released/qiime2-amplicon-ubuntu-latest-conda.yml
+
+#Note: To enable copy & paste keyboard short-cuts (CTRL+C // CTRL + V), right click ont he command prompt header bar, select properties, and under options, you should see "use CTRL+shift C/V as copy paste". Alternatively ,you can enable "use CTRL key shortcuts".
+
+#Run the command:
+
+qiime feature-classifier classify-sklearn \
+  --i-classifier silva-138-99-nb-classifier.qza \
+  --i-reads rep_set_raw_cutadapt.qza \
+  --o-classification taxonomy.qza
+
+#Receiving the following warning, but was able to ignore for now...
+
+/home/kayla/miniconda3/envs/rachis-qiime2-2026.1/lib/python3.10/site-packages/unifrac/__init__.py:9: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.                                                            import pkg_resources     
+
+#Taxonomy.qzv successfully generated
+
+#Tried to run the following command...
+
+qiime metadata tabulate \
+  --m-input-file taxonomy.qza \
+  --o-visualization taxonomy.qzv
+
+#Received the error message
+
+"There was an issue with loading the file   as metadata:                                                                                                                                                   Metadata file path doesn't exist, or the path points to something other than a file. Please check that the path exists, has read permissions, and points to a regular file (not a directory):                                                                                                               There may be more errors present in the metadata file. To get a full report, sample/feature metadata files can be validated with Keemei: https://keemei.qiime2.org                                                                                                                                          Find details on Rachis metadata requirements here: https://docs.qiime2.org/2026.1/tutorials/metadata/"
+
+#Decided to email the earlier taxonomy.qzv output back to myself and the run the metadata tabulate command on my mac returning to the 2026.4 version of Qiime... It was successful there.
+
+.........................................................................................
+#After that, I hit an error on the next command trying to run it on Windows, so I sent the taxonomy.qza file back to my Mac with the 2026.4 installation and attempted to complete the rest of the analysis there. And that worked. Run that command below:
+
+qiime metadata tabulate \
+  --m-input-file taxonomy.qza \
+  --o-visualization taxonomy.qzv
+
+NOTE: If you want to remove sequences that match mycoplasma (contamination) that showed up on your MultiFastQC html file included with the University of Buffalo return of the 16s (check this for chemical contaminants and biological contaminants such as yeast and mycoplasma),because you suspect it is a suspected reagent or kit contaminant (common in low-biomass samples), one option for dealing with it is you can run the following to create a separate taxonomy table that filters those sequences out and a separate rep-seqs file to match your table:
+
+qiime taxa filter-table \
+  --i-table table.qza \
+  --i-taxonomy taxonomy.qza \
+  --p-exclude Mycoplasma \
+  --o-filtered-table table-no-mycoplasma.qza
+
+qiime taxa filter-seqs \
+  --i-sequences rep-seqs.qza \
+  --i-taxonomy taxonomy.qza \
+  --p-exclude Mycoplasma \
+  --o-filtered-sequences rep-seqs-no-mycoplasma.qza
+
+
+#Note: Otherwise, you can use an R package called decontam to statistically subtract known contaminant ASVs based on negative controls, which is widely considered the gold standard for removing background noise:
+
+#Export a table so R can read it
+qiime tools export \
+  --input-path table.qza \
+  --output-path exported_table
+
+  2. Run decontamBring the feature table and your metadata (including negative controls like extraction blanks) into R. You can classify contaminants based on either frequency (if you have varying DNA concentrations) or prevalence (if you have extraction blanks). Detailed instructions and code are available in the decontam Documentation.
+
+  3. Import Back to QIIME 2Once you have generated your clean table and sequence lists in R, convert them back into QIIME 2 artifacts (.qza) to continue with your diversity metrics.bashqiime tools import \
+  --input-path feature-table.biom \
+  --type FeatureTable[Frequency] \
+  --input-format BIOMV100Format \
+  --output-path table-decontaminated.qza
+
+  Note: Avoid Over-Filtering: Inspect your taxonomy plots (via qiime taxa barplot) before deciding to blindly filter. In certain host-associated samples (e.g., respiratory tracts), Mycoplasma might be the biologically relevant target, not just a contaminant.
+
+#Generate Barplots
+qiime taxa barplot \
+  --i-table table.qza \
+  --i-taxonomy taxonomy.qza \
+  --m-metadata-file metadata.tsv \
+  --o-visualization taxa-bar-plots.qzv
+
+"Differential abundance testing with ANCOM-BC
+ANCOM-BC can be applied to identify features that are differentially abundant (i.e. present in different abundances) across sample groups. As with any bioinformatics method, you should be aware of the assumptions and limitations of ANCOM-BC before using it. We recommend reviewing the ANCOM-BC paper before using this method.
+
+ANCOM-BC is a compositionally-aware linear regression model that allows for testing differentially abundant features across groups while also implementing bias correction, and is currently implemented in the q2-composition plugin.
+
+Because we expect a lot of features to change in abundance across body sites, in this tutorial we’ll filter our full feature table to only contain gut samples. We’ll then apply ANCOM-BC to determine which, if any, sequence variants and genera are differentially abundant across the gut samples of our two subjects.
+
+We’ll start by creating a feature table that contains only the gut samples."
+
