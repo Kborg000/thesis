@@ -1,0 +1,351 @@
+BEFORE PROCEEDING:
+#Review quality of fastq.qzv files in FastQC, then move on to next step
+#In folder with data files, create two folders: "Trimmed" and "Unpaired"
+#Run trimmomatic on files after reviewing in FastQC (directions below)
+
+#1. Setup Conda environment ready for Qiime use 
+
+#Directions for Mac OS with Mac chip (M1/M2). See Qiime2 website for other options : https://library.qiime2.org/quickstart/qiime2#id-3-install-the-base-distributions-conda-environment
+
+CONDA_SUBDIR=osx-64 conda env create 
+  --name rachis-qiime2-2026.4 
+  --file https://raw.githubusercontent.com/qiime2/distributions/refs/heads/dev/2026.4/qiime2/released/rachis-qiime2-osx-64-conda.yml
+conda activate rachis-qiime2-2026.4
+conda config --env --set subdir osx-64
+
+#To test that your install works:
+
+conda deactivate
+conda activate rachis-qiime2-2026.4
+qiime info
+
+
+#2A. Install trimmomatic
+#OLD WAY: download JAR files from Trimmomatic 
+
+
+#2B. NEW WAY: UPDATE TO INSTALL OF TRIMMOMATIC as of 4/23/26:
+#You can install trimmomatic within conda instead, via:
+
+conda install -c bioconda trimmomatic
+
+#Then you need to find the location of the adapters.fa file. Forums say you should be able to just reference the adapters.fa but that didn't work for me. 
+
+#Get the location by entering in the command line:
+
+find $CONDA_PREFIX -name "TruSeq3-PE.fa"
+
+#Then copy paste that into your Trimmomatic command at the end as shown in the next step.
+
+#3A) OLD WAY. Run trimmomatic with the command formatted as follows:
+#Note: Need to run 1 set of input (1F, 1R) and 1 set out output (1 paired, 1 unpaired) at a time, or might receive error "unknown trimmer"
+java -jar ./miniconda3/pkgs/trimmomatic-0.39-hdfd78af_2/share/trimmomatic-0.39-2/trimmomatic.jar PE -threads 6 -phred33 
+./Desktop/16S\ Sample\ Data\ For\ Practice\ From\ Josh/Naive-Feces-4_S104_R1_001.fastq.gz 
+./Desktop/16S\ Sample\ Data\ For\ Practice\ From\ Josh/Naive-Feces-4_S104_R2_001.fastq.gz 
+./Desktop/16S\ Sample\ Data\ For\ Practice\ From\ Josh/Trimmed/Naive-Feces-4_S104_R1_001PAIREDOUT.fastq.gz 
+./Desktop/16S\ Sample\ Data\ For\ Practice\ From\ Josh/Unpaired/Naive-Feces-4_S104_R1_001UNPAIREDOUT.fastq.gz 
+./Desktop/16S\ Sample\ Data\ For\ Practice\ From\ Josh/Trimmed/Naive-Feces-4_S104_R2_001PAIREDOUT.fastq.gz 
+./Desktop/16S\ Sample\ Data\ For\ Practice\ From\ Josh/Unpaired/Naive-Feces-4_S104_R2_001UNPAIREDOUT.fastq.gz 
+ILLUMINACLIP:./miniconda3/pkgs/trimmomatic-0.39-hdfd78af_2/share/trimmomatic-0.39-2/adapters/TruSeq3-PE.fa:2:30:10 SLIDINGWINDOW:10:28 MINLEN:50
+
+#Note: First two file references are the forward and reverse data files, next two references are where the paired (Trimmed) and unpaired (Unpaired) output for the forward read will go, followed by 
+#two references for where the reverse read paired and unpaired will go. This is for one set of paired-end reads (forward and reverse). Will have to run separately for each pair (as far as I know, there isn't a way to run all at once)
+#Then re-verify quality of each file in FASTQC, should look different than before, better quality. 
+
+#NOTE::!:!!!!:!:! If cleared QC, remove "PAIREDOUT" from end of file name before moving to next step, otherwise R QIIME won't find file. You can do this really easily in Finder by selecting all the files, right clicking, selecting "rename", find "PAIREDOUT" and replace with nothing.
+
+
+#3B) NEW WAY: NOTE AS OF 4/23/26. QIIME has been updated, the above listed command doesn't necessarily work as is. I've also moved to working within conda. 
+
+trimmomatic PE -threads 4 -phred33 \./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/raw/1_551_D0_S1_L001_R1_001.fastq.gz ./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/raw/1_551_D0_S1_L001_R2_001.fastq.gz \
+./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/trimmed/1_551_D0_S1_L001_R1_001PAIREDOUT.fastq.gz ./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/unpaired/1_551_D0_S1_L001_R1_001UNPAIREDOUT.fastq.gz \
+./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/trimmed/1_551_D0_S1_L001_R2_001PAIREDOUT.fastq.gz ./Desktop/Wilmore\ Lab/Bioinformatics/Plateau\ +\ 4\ Manuscript\ 16s/16s/unpaired/1_551_D0_S1_L001_R2_001UNPAIREDOUT.fastq.gz \
+ILLUMINACLIP:/opt/homebrew/Caskroom/miniforge/base/envs/rachis-qiime2-2026.4/share/trimmomatic-0.40-0/adapters/TruSeq3-PE.fa:2:30:10 SLIDINGWINDOW:10:28 MINLEN:50
+
+#NOTE: DON'T FORGET TO REMOVE "PAIREDOUT" FROM THE END OF THE FILE NAME BEFORE YOU MOVE ONTO IMPORT INTO QIIME2, BECAUSE IF YOU USE THE DEFAULT IMPORTATION METHOD WITHOUT A MANIFEST FILE, IT WON'T KNOW HOW TO READ THE FILE NAME WITH THAT EXTRA STATEMENT ON THERE.
+
+#Note: If you get a "Caused by: java.lang.OutOfMemoryError: Java heap space" error, try dropping down the threads count (e.g. from 4 to 1)
+#Note: You installed trimmomatic at root (base directory) so you should be working from there, not deep in a file/folder system. Your path references should reflect how to get to those files from where you are at as mine do above.
+#******************In R Studio Command Line AFTER running Trimmomatic:***********************
+
+#4 OLD WAY) Activate your conda environment
+conda activate qiime2-amplicon-2023.9 // might also be qiime2-2023.7 
+
+#4 NEW WAY) You're already in a conda environment up to this point... stay there.
+
+#Navigate to folder with data files in RStudio Terminal (parent file of "Trimmed" folder created in above step).
+#Import files already trimmed in Trimmomatic
+#If using Joel paired-end 16s data with all samples from different animals (even though have separate forward/reverse read files for each sample)then use below, otherwise go to "ALTERNATE OPTION" below:
+qiime tools import \
+  --type "SampleData[PairedEndSequencesWithQuality]" \
+  --input-format CasavaOneEightLanelessPerSampleDirFmt \
+  --input-path Trimmed\
+  --output-path demux-paired-end.qza
+
+#*********************************************************************************************
+#ALTERNATE OPTION FOR IF ABOVE does not fit data. Will receive error about duplicates in sample if uploading reads that are all from the SAME SAMPLE, e.g. multiple reads from human post mortem case
+# If this applies, make a manifest file that lists sample-id and absolute-path (like metadata file .tsv) will need to list both forward and reverse filepaths if paired-end. 
+#E.g.:
+#sample-id forward-absolute-filepath reverse-absolute-filepath
+#AM13_S73_L001_R1_001  $PWD/Trimmed/AM13_S73_L001_R1_001.fastq.gz  $PWD/Trimmed/AM13_S73_L001_R2_001.fastq.gz
+#AM13_S73_L002_R1_001  $PWD/Trimmed/AM13_S73_L002_R1_001.fastq.gz  $PWD/Trimmed/AM13_S73_L002_R2_001.fastq.gz
+#AM13_S73_L003_R1_001  $PWD/Trimmed/AM13_S73_L003_R1_001.fastq.gz  $PWD/Trimmed/AM13_S73_L003_R2_001.fastq.gz
+#AM13_S73_L004_R1_001  $PWD/Trimmed/AM13_S73_L004_R1_001.fastq.gz  $PWD/Trimmed/AM13_S73_L004_R2_001.fastq.gz
+
+#might need? Did not need command : unzip -q se-64.zip
+
+qiime tools import \
+  --type 'SampleData[PairedEndSequencesWithQuality]' \
+  --input-path manifest \
+  --output-path paired-end-demux.qza \
+  --input-format PairedEndFastqManifestPhred33V2
+#*********************************************************************************************
+
+SOME LATER NOTES ON THE ABOVE NOTES... ADDED 4/23/26 (From Google Gemini):
+
+"In QIIME 2, both CasavaOneEightLanelessPerSampleDirFmt and PairedEndFastqManifestPhred33V2 are formats used to import demultiplexed, paired-end FASTQ files. The core difference lies in whether the input files follow strict Illumina Casava naming conventions or if you are defining their location manually via a manifest file. 
+
+
+1. CasavaOneEightLanelessPerSampleDirFmt
+This format is designed for data demultiplexed by Illumina’s CASAVA (or bcl2fastq) software. It expects a specific directory structure and file naming convention where QIIME 2 parses the sample IDs, lane numbers, and directions directly from the filename. 
+
+Best For: Data straight from an Illumina MiSeq/NextSeq that is already demultiplexed.
+Filename Format: sampleid_barcodeid_L001_R1_001.fastq.gz (Matches: .+_.+_L[0-9][0-9][0-9]_R[12]_001\.fastq\.gz).
+Requirements:
+Files must be in a single directory.
+Must be gzipped (.fastq.gz).
+Must contain _R1_ and _R2_ in the names.
+Pros: No need to create a manifest file.
+Cons: Very strict filename requirements; files must be renamed if they don't match exactly. 
+
+2. PairedEndFastqManifestPhred33V2
+This format provides maximum flexibility. Instead of relying on file names, you provide a tab-delimited text file (the "manifest") that explicitly maps sample IDs to their corresponding forward and reverse fastq file paths. 
+
+Best For: Data with custom naming conventions, data from multiple sources, or when you want to avoid renaming hundreds of files.
+Structure: A file containing: sample-id, forward-absolute-filepath, reverse-absolute-filepath.
+Requirements:
+Phred33 quality scores (standard for modern Illumina).
+Tabs must be used in the manifest (not spaces).
+Pros: Flexible; enables importing files from any location, regardless of name.
+Cons: Requires manual creation of the manifest file. ""
+#*********************************************************************************************
+
+#Demultiplex (?) Then view trimmed data that was imported
+qiime demux summarize \
+  --i-data ./demux-paired-end.qza \
+  --o-visualization ./demux-paired-end.qzv
+ 
+qiime tools view demux-paired-end.qzv
+
+#Denoise - want bottom of (whisker) box above 32/33
+#STOP HERE AND ADJUST #s BELOW!!! Adjust to truncation length
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs ./demux-paired-end.qza \
+  --p-trim-left-f 7 \
+  --p-trim-left-r 9 \
+  --p-trunc-len-f 0 \
+  --p-trunc-len-r 137 \
+  --p-n-threads 6 \
+  --o-table ./table.qza \
+  --o-representative-sequences ./rep_set.qza \
+  --o-denoising-stats ./stats.qza \
+  --o-base-transition-stats base-transition-stats.qza
+
+#Note: If you don't want to truncate, you can put 0. 
+#trun-len-f will cut off 
+#demux_seqs.qza is a zip file with each read which allows us to keep track of which read belongs to which sample after denoising.
+#dada2_table.qza will output - sample ids and # of sample features but no interest in sequences
+#dada2_rep_set.qza - has sequences, output of amplicon seq variants and all of the corrected seq are given a # called a hash, and whenever the same seq are found, it produces the same hash so easier to refer to same sequences by hash instead of referring to them by their entire name. 
+#dada2_stats.qza - Denoising stats, tells us how the denoising step went.
+
+#use trim-left (on forward only?) if you need to trim out the primer if the sequence still has the primer in it. If have EMP protocol data which doesnt have the primer still in, don't need to use.
+#to use it.
+
+#--p-trim-left-f = forward primer length
+#-p-trim-left-r = reverse primer length
+
+#set p-trunc-len number to match the end length (left to right count) that you want to truncate (anything past that point is cut off)
+
+#Visualize metadata table - table shows how many samples were kept after denoising, filtering, etc.,.
+#Chimeras are created during PCR when unrelated molecules become tangled and then are amplified as a single unit
+
+qiime metadata tabulate \
+--m-input-file ./stats.qza \
+--o-visualization ./stats.qzv \
+
+qiime tools view stats.qzv
+
+#Note: Need to create metadata file to "frame" structure of how data should be imported with labels and categories. Metadata file can be .txt or .tsv
+#Example of metadata.txt :
+
+sample-id IgA_Status  Cage_Num
+#q2:types Categorical Categorical
+C1_Neg  Negative  1
+C1_Pos  Positive  1
+C2_Neg  Negative  2
+C2_Pos  Positive  2
+C3_Neg  Negative  3
+C3_Pos  Positive  3
+
+#Then can enter into terminal or RStudio command:
+qiime metadata tabulate \
+--m-input-file metadata.txt \
+--o-visualization tabulated-metadata.qzv
+qiime tools view tabulated-metadata.qzv
+
+#Generate feature table summary
+#Table that outputs the frequency is useful for later when we need to set minimum/maximum frequncies when looking at alpha/beta diversity. Essentially # of features (species) found in each sample as a min/max.
+
+qiime feature-table summarize \
+  --i-table ./table.qza \
+  --m-sample-metadata-file ./metadata.txt \
+  --o-visualization ./table.qzv
+  
+qiime tools view table.qzv
+
+#Generating a phylogenetic tree for diversity analysis
+#This one takes awhile to run (6 threads on this laptop will use 100% CPU and take about 20 mins)
+#If get error " (1/1) Invalid value for '--i-reference-database': SeppReferenceDatabase does not exist" then re-download and move into project folder (doesn't need to be in trimmed folder)
+#from https://data.qiime2.org/2023.9/common/sepp-refs-gg-13-8.qza
+
+qiime fragment-insertion sepp \
+  --i-representative-sequences ./rep_set.qza \
+  --i-reference-database ./sepp-refs-gg-13-8.qza \ #Do not know if it matters or changes/breaks anything if there is a ./ before sepp
+  --o-tree ./tree.qza \
+  --o-placements ./tree_placements.qza \
+  --p-threads 6  
+
+
+#Taxonomic Classification
+#Download URL: https://data.qiime2.org/2023.9/common/gg-13-8-99-515-806-nb-classifier.qza
+#Save as: gg-13-8-99-515-806-nb-classifier.qza in project folder
+#Details: The first step in this process is to assign taxonomy to the sequences in our FeatureData[Sequence] QIIME 2 artifact. We’ll do that using a pre-trained Naive Bayes classifier and the q2-feature-classifier plugin. This classifier was trained on the Greengenes 13_8 99% OTUs, where the sequences have been trimmed to only include 250 bases from the region of the 16S that was sequenced in this analysis (the V4 region, bound by the 515F/806R primer pair). We’ll apply this classifier to our sequences, and we can generate a visualization of the resulting mapping from sequence to taxonomy.
+#Taxonomic classifiers perform best when they are trained based on your specific sample preparation and sequencing parameters, including the primers that were used for amplification and the length of your sequence reads. Therefore in general you should follow the instructions in Training feature classifiers with q2-feature-classifier to train your own taxonomic classifiers. We provide some common classifiers on our data resources page, including Silva-based 16S classifiers, though in the future we may stop providing these in favor of having users train their own classifiers which will be most relevant to their sequence data.
+
+#Run Taxonomic Classification
+qiime feature-classifier classify-sklearn \
+  --i-reads ./rep_set.qza \
+  --i-classifier ./gg-13-8-99-515-806-nb-classifier.qza \
+  --o-classification ./taxonomy.qza
+
+#View Taxonomic Classification table (not graphs)
+qiime metadata tabulate \
+  --m-input-file ./taxonomy.qza \
+  --o-visualization ./taxonomy.qzv
+
+#View table of sequences mapped to feature ids used for Taxonomic Classification
+qiime feature-table tabulate-seqs \
+  --i-data ./rep_set.qza \
+  --o-visualization ./rep_set.qzv
+
+#Filter out samples with fewer sequences than our rarefaction depth (frequency below minimum frequency threshold)
+#Use lowest “denoised” column value form stats.qzv (screenshot 1) output to set frequency
+qiime feature-table filter-samples \
+  --i-table ./table.qza \
+  --p-min-frequency 40000 \
+  --o-filtered-table ./table_40k.qza
+
+#Taxonomy Barchart - build an interactive barplot of the taxonomy in each sample
+#When viewing the plot in the viewer, each level is Kingdom > Phylum > Class > etc.,. (Deeper = higher #)
+#You can make adjustments, incl. color change, and then export a .svg (?) for publication quality image
+
+qiime taxa barplot \
+  --i-table ./table_40k.qza \
+  --i-taxonomy ./taxonomy.qza \
+  --m-metadata-file ./metadata.txt \
+  --o-visualization ./taxa_barplot.qzv
+
+
+#rarifies the input feature table, calculates several commonly used alpha- and beta-diversity metrics, and produces principal coordinate analysis (PCoA) visualizations in Emperor for the beta diversity metrics. By default, the metrics computed are:
+
+#Alpha Diversity:
+
+#Shannon’s diversity index
+
+#Observed Features
+
+#Faith’s phylogenetic diversity
+
+#Pielou’s evenness
+
+#Beta Diversity:
+#Jaccard distance
+#Bray-Curtis distance
+#Unweighted UniFrac distance
+#Weighted UniFrac distance
+
+#Note: sampling-depth was taken from minimum frequency
+
+qiime diversity core-metrics-phylogenetic \
+  --i-table ./table.qza \
+  --i-phylogeny ./tree.qza \
+  --m-metadata-file ./metadata.txt \
+  --p-sampling-depth 40000 \
+  --output-dir ./core-metrics-results
+
+#
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity ./core-metrics-results/faith_pd_vector.qza \
+  --m-metadata-file ./metadata.txt \
+  --o-visualization ./core-metrics-results/faiths_pd_statistics.qzv
+
+#
+qiime diversity alpha-group-significance \
+ --i-alpha-diversity ./core-metrics-results/evenness_vector.qza \
+ --m-metadata-file ./metadata.txt \
+ --o-visualization ./core-metrics-results/evenness_statistics.qzv
+
+#Now, let’s analyze the statistical trends using PERMANOVA. PERMANOVA tests the hypothesis that samples within a group are more similar to each other than they are to samples in another group. To put it another way, it tests whether the within-group distances from each group are different from the between group distance. We expect samples that are similar to have smaller distances from each other, so if our hypothesis that one group is different from another is true, we’d expect the within-group distances to be smaller than the between group distance.
+
+#beta-group-significance command to test whether the donor identity (which we qualitatively identified as a major separator in PCoA space) is associated with significant differences in weighted and unweighted UniFrac distance.
+#Note: Column labels are case-sensitive
+ qiime diversity beta-group-significance \
+  --i-distance-matrix core-metrics-results/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.txt \
+  --m-metadata-column Dosage \
+  --o-visualization core-metrics-results/unweighted-unifrac-dosage-significance.qzv
+
+#
+  qiime diversity beta-group-significance \
+  --i-distance-matrix core-metrics-results/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.txt \
+  --m-metadata-column Dosage \
+  --o-visualization core-metrics-results/weighted-unifrac-dosage-significance.qzv
+
+
+  #Not sure if I need to run this, but did...
+  #A significant difference in PERMANOVA can reflect a large difference between the groups or differences in variances within a group. This means that we might see a statistically significant difference even if it’s caused by variation within one group. Distance boxplots can help give a visual sense of this, but it’s nice to use a statistical test to confirm this. We can use the permdisp to help rule out differences due to a high degree of dispersion (within-group variance) in one of the groups of interest.
+  #We can specify that we want to use permdisp using the --p-method flag in qiime diversity beta-group-significance. Let’s explore dispersion based on cage_id to check whether are cage-related differences are due to large within-cage variance.
+
+  qiime diversity beta-group-significance \
+  --i-distance-matrix core-metrics-results/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.txt \
+  --m-metadata-column Dosage \
+  --o-visualization core-metrics-results/weighted-unifrac-dosage-significance_disp.qzv \
+  --p-method permdisp
+
+
+## Let josh know: didn't run rarefaction, didn't run "diversity adonis" (because related to cageId )
+
+
+AS AN ASIDE:
+
+If you need to confirm that the 16s prediction of what is B. fragilis is actually B. fragilis in your specific samples:
+
+#This will allow you to match feature ids to specific sequences and then look those sequences up in NCBI blast to confirm they are B. fragilis or not ()
+
+#Then Drag+Drop your rep-seqs.qzv file into Qiime2View website.
+https://view.qiime2.org/visualization/
+
+This will show you the feature ids and their associated sequences.
+
+#This will show which feature Ids are associated with which samples:
+
+
+mkdir Biom 
+qiime tools export \
+  --input-path feature-table.qza \
+  --output-path Biom/
+
+biom convert -i Biom/feature-table.biom -o Biom/feature-table.tsv --to-tsv
+
