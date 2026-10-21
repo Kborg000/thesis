@@ -186,7 +186,7 @@ Worth noting, Trimmomatic lets you truncate the end of your reads when the quali
 Run the command:
 
 qiime dada2 denoise-paired \
-  --i-demultiplexed-seqs ./demux-paired-end.qza \
+  --i-demultiplexed-seqs ./trimmed-demux.qza \
   --p-trunc-len-f 0 \
   --p-trunc-len-r 0 \
   --p-n-threads 6 \
